@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Icon from './Icon.svelte';
   type View = 'chat' | 'library' | 'documents' | 'collections' | 'history';
-  let { active, onNavigate, children, connected = false }: { active: View; onNavigate: (view: View) => void; children: Snippet; connected?: boolean } = $props();
+  type Connection = 'checking' | 'connected' | 'disconnected';
+  let { active, onNavigate, children, connection = 'disconnected' }: { active: View; onNavigate: (view: View) => void; children: Snippet; connection?: Connection } = $props();
   let mobileOpen = $state(false);
   let mobileViewport = $state(false);
   let menuButton: HTMLButtonElement;
@@ -15,11 +16,17 @@
     return () => query.removeEventListener('change', update);
   });
   function closeMenu() { mobileOpen = false; menuButton?.focus(); }
+  async function toggleMenu() {
+    if (mobileOpen) { closeMenu(); return; }
+    mobileOpen = true;
+    await tick();
+    sidebarElement.querySelector<HTMLElement>('a[href]')?.focus();
+  }
   function handleKeyboard(event: KeyboardEvent) {
     if (!mobileOpen) return;
     if (event.key === 'Escape') { event.preventDefault(); closeMenu(); }
     if (event.key === 'Tab') {
-      const elements = [menuButton, ...Array.from(sidebarElement.querySelectorAll<HTMLElement>('a[href], button:not(:disabled)'))];
+      const elements = Array.from(sidebarElement.querySelectorAll<HTMLElement>('a[href], button:not(:disabled)'));
       const first = elements[0]; const last = elements.at(-1);
       if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -32,11 +39,15 @@
     { id: 'collections', label: 'Colecciones', icon: 'collection' },
     { id: 'history', label: 'Historial de consultas', icon: 'history' },
   ];
-  function navigate(view: View) { onNavigate(view); mobileOpen = false; }
+  function navigate(view: View) {
+    onNavigate(view);
+    mobileOpen = false;
+    if (mobileViewport) void tick().then(() => document.getElementById('main-content')?.focus());
+  }
 </script>
 
 <svelte:window onkeydown={handleKeyboard} />
-<a class="skip-link" href="#main-content">Saltar al contenido</a>
+<a class="skip-link" href="#main-content" onclick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Saltar al contenido</a>
 <div class="app-shell">
   {#if mobileOpen}<button class="sidebar-scrim" aria-label="Cerrar navegación" tabindex="-1" onclick={closeMenu}></button>{/if}
   <aside bind:this={sidebarElement} id="main-navigation" inert={mobileViewport && !mobileOpen} class:mobile-open={mobileOpen} class="sidebar" aria-label="Navegación principal">
@@ -58,7 +69,7 @@
   </aside>
   <div class="main-shell">
     <header class="topbar">
-      <div class="topbar-left"><button bind:this={menuButton} class="icon-button mobile-menu" aria-label={mobileOpen ? 'Cerrar navegación' : 'Abrir navegación'} aria-expanded={mobileOpen} aria-controls="main-navigation" onclick={() => mobileOpen = !mobileOpen}><Icon name="menu" /></button><span class="connection-status" class:connected><span></span>{connected ? 'SERVICIO CONECTADO' : 'SERVICIO SIN CONECTAR'}</span></div>
+      <div class="topbar-left"><button bind:this={menuButton} class="icon-button mobile-menu" aria-label={mobileOpen ? 'Cerrar navegación' : 'Abrir navegación'} aria-expanded={mobileOpen} aria-controls="main-navigation" onclick={toggleMenu}><Icon name="menu" /></button><span class="connection-status" class:connected={connection === 'connected'} class:checking={connection === 'checking'} role="status"><span></span>{connection === 'checking' ? 'COMPROBANDO CONEXIÓN' : connection === 'connected' ? 'SERVICIO CONECTADO' : 'SERVICIO SIN CONECTAR'}</span></div>
       <nav class="top-nav" aria-label="Accesos rápidos"><button class:current={active === 'chat'} onclick={() => navigate('chat')}>Consulta</button><button class:current={active === 'library' || active === 'documents'} onclick={() => navigate('library')}>Recursos</button><button class:current={active === 'collections'} onclick={() => navigate('collections')}>Colecciones</button></nav>
       <span class="topbar-divider"></span><span class="local-label"><Icon name="lock" size={13} /> Espacio local</span><span class="avatar top-avatar">CL</span>
     </header>
