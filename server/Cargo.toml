@@ -1,0 +1,15 @@
+[package]
+name = "cuy-limeno-server"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+soupdb-driver = { path = "../../rsoup" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+
+[dev-dependencies]
+serde_json = "1"
+
