@@ -1,21 +1,23 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Shell from './lib/components/Shell.svelte';
   import Icon from './lib/components/Icon.svelte';
-  import { request, viewFromHash, unavailable, type View, type Capabilities } from './lib/api';
+  import { ApiError, request, viewFromHash, unavailable, type View, type Capabilities } from './lib/api';
 
   let view = $state<View>(viewFromHash(window.location.hash));
   let capabilities = $state<Capabilities | null>(null);
   let connection = $state<'checking' | 'connected' | 'disconnected'>('checking');
   let connectionError = $state('');
   let resourceError = $state('');
+  let schemaPending = $state(false);
   let loading = $state(false);
   let refreshing = $state(false);
   let search = $state('');
   let statusFilter = $state('all');
   let layout = $state<'grid' | 'list'>('list');
   let draft = $state('');
-  let modal = $state<'upload' | 'collection' | 'connection' | 'sources' | null>(null);
+  let modal = $state<'upload' | 'collection' | 'connection' | 'sources' | 'replace-draft' | null>(null);
+  let suggestedDraft = $state('');
   let collectionName = $state('');
   let notice = $state('');
   let requestId = 0;
@@ -38,11 +40,17 @@
   async function loadResource(target: View) {
     const id = ++requestId;
     resourceError = '';
+    schemaPending = false;
     const endpoint = endpoints[target];
     loading = Boolean(endpoint);
     if (!endpoint) return;
     try { await request(endpoint); }
-    catch (error) { if (id === requestId) resourceError = error instanceof Error ? error.message : 'No se pudo cargar el recurso.'; }
+    catch (error) {
+      if (id === requestId) {
+        schemaPending = error instanceof ApiError && error.code === 'DOCUMENT_SCHEMA_NOT_CONFIGURED';
+        resourceError = error instanceof Error ? error.message : 'No se pudo cargar el recurso.';
+      }
+    }
     finally { if (id === requestId) loading = false; }
   }
 
@@ -70,11 +78,24 @@
     try { await navigator.clipboard.writeText(draft); notice = 'Borrador copiado.'; }
     catch { notice = 'No se pudo acceder al portapapeles. Puedes seleccionar y copiar el texto.'; }
   }
+
+  function useSuggestion(suggestion: string) {
+    if (!draft.trim()) { draft = suggestion; return; }
+    suggestedDraft = suggestion;
+    modal = 'replace-draft';
+  }
+
+  async function openDocuments() {
+    modal = null;
+    navigate('documents');
+    await tick();
+    document.getElementById('main-content')?.focus();
+  }
 </script>
 
 <svelte:head><title>{titles[view]} · CuyLimeño</title></svelte:head>
 
-<Shell active={view} onNavigate={navigate} connected={connection === 'connected'}>
+<Shell active={view} onNavigate={navigate} {connection}>
   <div class="workspace-topline">
     <div class="breadcrumb">Mi espacio <span>/</span> <strong>{titles[view]}</strong></div>
     <button class="connection-indicator" onclick={() => modal = 'connection'}>
@@ -100,7 +121,7 @@
           <p class="muted">Cada respuesta podrá estar acompañada por fragmentos verificables de tus fuentes académicas.</p>
           <div class="suggestions">
             {#each ['Resume los aportes principales de mis lecturas', 'Compara las metodologías de los documentos', '¿Qué limitaciones señalan los autores?'] as suggestion}
-              <button onclick={() => draft = suggestion}><Icon name="arrow-up-right" size={17} />{suggestion}</button>
+              <button onclick={() => useSuggestion(suggestion)}><Icon name="arrow-up-right" size={17} />{suggestion}</button>
             {/each}
           </div>
           <p class="fine-print">Las sugerencias solo preparan un borrador. No se envía información.</p>
@@ -158,7 +179,7 @@
             </div>
             <div class="resource-footer"><Icon name="info" size={15} /><span>Esquema e ingestión pendientes · No hay datos de demostración.</span></div>
           </div>
-          {#if resourceError}<div class="api-notice" role="status"><Icon name="info" size={18} /><div><strong>No se pudo cargar {view === 'collections' ? 'las colecciones' : view === 'history' ? 'el historial' : 'el catálogo'}</strong><p>{resourceError}</p></div><button class="button ghost compact" disabled={loading} onclick={() => void loadResource(view)}>Reintentar</button></div>{/if}
+          {#if resourceError}<div class="api-notice" role="status"><Icon name="info" size={18} /><div><strong>{schemaPending ? 'Integración documental pendiente' : view === 'collections' ? 'No se pudieron cargar las colecciones' : view === 'history' ? 'No se pudo cargar el historial' : 'No se pudo cargar el catálogo'}</strong><p>{resourceError}</p></div>{#if !schemaPending}<button class="button ghost compact" disabled={loading} onclick={() => void loadResource(view)}>Reintentar</button>{/if}</div>{/if}
         </div>
         {#if view === 'library' || view === 'history'}<aside class="context-card card"><span class="eyebrow">{view === 'history' ? 'CONTEXTO PRESERVADO' : 'DETALLES DEL DOCUMENTO'}</span><div class="context-icon"><Icon name={view === 'history' ? 'history' : 'file-search'} size={32} /></div><h3>{view === 'history' ? 'Retoma el hilo' : 'Una mirada más cerca'}</h3><p class="muted">{view === 'history' ? 'Selecciona una conversación para revisar sus mensajes y fuentes originales cuando el historial esté conectado.' : 'Selecciona un documento para consultar su información, estado de procesamiento y fuentes disponibles.'}</p><div class="context-bottom"><Icon name="shield" size={17} /><p>Las fuentes y citas se mostrarán únicamente cuando provengan de documentos reales.</p></div></aside>{/if}
       </div>
@@ -170,8 +191,12 @@
   <div class="modal-backdrop" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) modal = null; }}>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" tabindex="-1" onkeydown={(event) => { if (event.key === 'Escape') modal = null; }} use:focusDialog>
       <div class="modal-header"><span class="eyebrow">CUYLIMEÑO · ESPACIO PERSONAL</span><button class="button ghost compact" onclick={() => modal = null} aria-label="Cerrar diálogo"><Icon name="x" size={20} /></button></div>
-      <h2 id="modal-title">{modal === 'connection' ? 'Estado de tu espacio' : modal === 'upload' ? 'Añadir documentos académicos' : modal === 'collection' ? 'Nueva colección' : 'Fuentes de la consulta'}</h2>
-      {#if modal === 'connection'}
+      <h2 id="modal-title">{modal === 'replace-draft' ? '¿Reemplazar tu borrador?' : modal === 'connection' ? 'Estado de tu espacio' : modal === 'upload' ? 'Añadir documentos académicos' : modal === 'collection' ? 'Nueva colección' : 'Fuentes de la consulta'}</h2>
+      {#if modal === 'replace-draft'}
+        <p class="muted">Ya tienes una pregunta escrita. Puedes conservarla o reemplazarla por esta sugerencia.</p>
+        <blockquote class="info-banner">{suggestedDraft}</blockquote>
+        <div class="modal-actions"><button class="button secondary" onclick={() => modal = null}>Conservar borrador</button><button class="button primary" onclick={() => { draft = suggestedDraft; modal = null; }}>Reemplazar borrador</button></div>
+      {:else if modal === 'connection'}
         <p class="muted">El servidor Rust comprueba la conexión mediante el driver rsoup.</p>
         <dl class="connection-details"><div><dt>Servidor Rust</dt><dd>{capabilities ? 'Disponible' : 'Sin respuesta'}</dd></div><div><dt>SoupDB / rsoup</dt><dd>{connection === 'connected' ? 'Conectado' : connection === 'checking' ? 'Comprobando…' : 'Sin conexión'}</dd></div><div><dt>Esquema documental</dt><dd>Pendiente</dd></div><div><dt>Ingestión de PDF</dt><dd>Pendiente</dd></div><div><dt>GroqCloud</dt><dd>{capabilities?.groq_configured ? 'Configurado en el servidor' : 'Pendiente de configuración'}</dd></div>{#if capabilities?.groq_model}<div><dt>Modelo configurado</dt><dd>{capabilities.groq_model}</dd></div>{/if}</dl>
         {#if connectionError}<p class="api-notice" role="status">{connectionError}</p>{/if}
@@ -182,7 +207,7 @@
       {:else if modal === 'collection'}
         <p class="muted">Prepara el nombre de tu proyecto. Su persistencia requiere el esquema documental.</p><label class="field-label" for="collection-name">Nombre de la colección</label><input class="input full-width" id="collection-name" bind:value={collectionName} maxlength="120" placeholder="Por ejemplo, revisión de literatura" /><p class="fine-print">Borrador temporal. No se guardará ni enviará al servidor.</p><div class="info-banner"><Icon name="info" size={18} /><span>La creación de colecciones estará disponible cuando se conecte el esquema.</span></div><div class="modal-actions"><button class="button secondary" onclick={() => modal = null}>Cerrar</button><button class="button primary" disabled>Crear colección</button></div>
       {:else}
-        <p class="muted">Elige los documentos que darán contexto a tu pregunta.</p><div class="source-empty"><Icon name="file-search" size={36} /><h3>No hay fuentes conectadas</h3><p>La selección estará disponible cuando el catálogo y la ingestión estén configurados.</p></div><div class="modal-actions"><button class="button secondary" onclick={() => modal = null}>Cerrar</button><button class="button primary" onclick={() => { modal = null; navigate('documents'); }}>Ir a mis documentos</button></div>
+        <p class="muted">Elige los documentos que darán contexto a tu pregunta.</p><div class="source-empty"><Icon name="file-search" size={36} /><h3>No hay fuentes conectadas</h3><p>La selección estará disponible cuando el catálogo y la ingestión estén configurados.</p></div><div class="modal-actions"><button class="button secondary" onclick={() => modal = null}>Cerrar</button><button class="button primary" onclick={openDocuments}>Ir a mis documentos</button></div>
       {/if}
     </div>
   </div>
@@ -200,6 +225,6 @@
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     };
     node.addEventListener('keydown', trap);
-    return { destroy() { node.removeEventListener('keydown', trap); previous?.focus(); } };
+    return { destroy() { node.removeEventListener('keydown', trap); if (previous?.isConnected) previous.focus(); } };
   }
 </script>
