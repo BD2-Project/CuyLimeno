@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+server/target/
+playwright-report/
+test-results/
+.local/
+*.[mM][dD]
+[dD][oO][cC][sS]/
