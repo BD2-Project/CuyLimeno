@@ -27,9 +27,13 @@ use crate::{
 };
 
 const GROUNDED_PROMPT: &str = "Eres CuyLimeño, asistente de investigación académica. \
-Responde ÚNICAMENTE con la información de los fragmentos proporcionados. \
-Cita cada afirmación con el marcador [n] del fragmento del que proviene. \
-Si los fragmentos no responden a la pregunta, dilo con claridad y no inventes información.";
+Prioriza siempre la información de los fragmentos proporcionados y cita con [n] cada afirmación que provenga de ellos. \
+Si los fragmentos no responden a la pregunta pero es una pregunta general (una definición o un concepto), \
+responde con una explicación general clara y completa; puedes usar listas o una tabla si ayudan a organizar la información. \
+Termina esa respuesta con una nota breve: «Esta explicación se basa en conocimiento general; no está respaldada por los documentos proporcionados.» \
+No uses marcadores [n] en esa parte. \
+Si la pregunta requiere datos concretos de los documentos y no están en los fragmentos, dilo con claridad. \
+Nunca inventes citas ni atribuyas afirmaciones a documentos que no has recibido.";
 
 const CONVERSATIONAL_PROMPT: &str = "Eres CuyLimeño, un asistente académico conversacional. \
 No se encontraron fragmentos de los documentos del usuario que cubran esta pregunta \
