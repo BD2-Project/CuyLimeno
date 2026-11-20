@@ -2,26 +2,89 @@
   import type { Snippet } from 'svelte';
   import { onMount, tick } from 'svelte';
   import Icon from './Icon.svelte';
-  type View = 'chat' | 'library' | 'documents' | 'collections' | 'history';
+  import type { View, Conversation } from '../api';
+
   type Connection = 'checking' | 'connected' | 'disconnected';
-  let { active, onNavigate, children, connection = 'disconnected' }: { active: View; onNavigate: (view: View) => void; children: Snippet; connection?: Connection } = $props();
+
+  let {
+    active,
+    connection = 'disconnected',
+    conversations = [],
+    activeConversationId = null,
+    hasMoreConversations = false,
+    loadingMoreConversations = false,
+    onNavigate,
+    onNewConversation,
+    onSelectConversation,
+    onRenameConversation,
+    onDeleteConversation,
+    onLoadMoreConversations,
+    model = null,
+    onOpenSettings,
+    children,
+  }: {
+    active: View;
+    connection?: Connection;
+    conversations?: Conversation[];
+    activeConversationId?: string | null;
+    hasMoreConversations?: boolean;
+    loadingMoreConversations?: boolean;
+    model?: string | null;
+    onNavigate: (view: View) => void;
+    onNewConversation: () => void;
+    onSelectConversation: (id: string) => void;
+    onRenameConversation: (conversation: Conversation) => void;
+    onDeleteConversation: (conversation: Conversation) => void;
+    onLoadMoreConversations: () => void;
+    onOpenSettings: () => void;
+    children: Snippet;
+  } = $props();
+
   let mobileOpen = $state(false);
   let mobileViewport = $state(false);
+  let menuId = $state<string | null>(null);
+  let menuConversation = $state<Conversation | null>(null);
+  let menuPosition = $state({ top: 0, left: 0 });
+  let listEl = $state<HTMLDivElement>();
+  let fadeTop = $state(false);
+  let fadeBottom = $state(false);
   let menuButton: HTMLButtonElement;
   let sidebarElement: HTMLElement;
+
   onMount(() => {
     const query = window.matchMedia('(max-width: 700px)');
     const update = () => { mobileViewport = query.matches; if (!query.matches) mobileOpen = false; };
     update(); query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
+    const closeMenus = () => closeConversationMenu();
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') closeConversationMenu(); };
+    const resize = () => { closeConversationMenu(); updateListFades(); };
+    window.addEventListener('click', closeMenus);
+    window.addEventListener('keydown', escape);
+    window.addEventListener('resize', resize);
+    return () => {
+      query.removeEventListener('change', update);
+      window.removeEventListener('click', closeMenus);
+      window.removeEventListener('keydown', escape);
+      window.removeEventListener('resize', resize);
+    };
   });
+
+  $effect(() => {
+    conversations;
+    void tick().then(updateListFades);
+  });
+
+  function closeSidebarOnMobile() { if (mobileViewport) mobileOpen = false; }
+
   function closeMenu() { mobileOpen = false; menuButton?.focus(); }
+
   async function toggleMenu() {
     if (mobileOpen) { closeMenu(); return; }
     mobileOpen = true;
     await tick();
-    sidebarElement.querySelector<HTMLElement>('a[href]')?.focus();
+    sidebarElement.querySelector<HTMLElement>('a[href], button')?.focus();
   }
+
   function handleKeyboard(event: KeyboardEvent) {
     if (!mobileOpen) return;
     if (event.key === 'Escape') { event.preventDefault(); closeMenu(); }
@@ -32,17 +95,49 @@
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }
   }
-  const navigation: { id: View; label: string; icon: string }[] = [
-    { id: 'chat', label: 'Chat académico', icon: 'chat' },
-    { id: 'library', label: 'Mi biblioteca', icon: 'library' },
-    { id: 'documents', label: 'Mis documentos', icon: 'document' },
-    { id: 'collections', label: 'Colecciones', icon: 'collection' },
-    { id: 'history', label: 'Historial de consultas', icon: 'history' },
-  ];
+
   function navigate(view: View) {
     onNavigate(view);
-    mobileOpen = false;
+    closeSidebarOnMobile();
     if (mobileViewport) void tick().then(() => document.getElementById('main-content')?.focus());
+  }
+
+  function selectConversation(id: string) {
+    onSelectConversation(id);
+    closeConversationMenu();
+    closeSidebarOnMobile();
+    if (mobileViewport) void tick().then(() => document.getElementById('main-content')?.focus());
+  }
+
+  function toggleConversationMenu(event: MouseEvent, conversation: Conversation) {
+    event.stopPropagation();
+    if (menuId === conversation.id) { closeConversationMenu(); return; }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const left = Math.max(8, Math.min(window.innerWidth - 150, rect.right - 140));
+    const top = rect.bottom + 96 > window.innerHeight
+      ? Math.max(8, rect.top - 88)
+      : rect.bottom + 4;
+    menuId = conversation.id;
+    menuConversation = conversation;
+    menuPosition = { top, left };
+  }
+
+  function closeConversationMenu() {
+    menuId = null;
+    menuConversation = null;
+  }
+
+  function updateListFades() {
+    if (!listEl) return;
+    fadeTop = listEl.scrollTop > 4;
+    fadeBottom = listEl.scrollTop + listEl.clientHeight < listEl.scrollHeight - 4;
+  }
+
+  function formatDate(value: string) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
   }
 </script>
 
@@ -55,24 +150,56 @@
       <span class="brand-mark"><Icon name="book" size={23} /></span>
       <span><strong>CuyLimeño<span class="brand-dot">.</span></strong><small>Tu espacio de investigación</small></span>
     </a>
-    <button class="button new-conversation" onclick={() => navigate('chat')}><Icon name="plus" size={18} /> Nueva conversación</button>
-    <div class="nav-section-label">ESPACIO PERSONAL</div>
-    <nav class="main-nav">
-      {#each navigation as item}
-        <button class:active={active === item.id} aria-current={active === item.id ? 'page' : undefined} onclick={() => navigate(item.id)}>
-          <Icon name={item.icon} size={19} /><span>{item.label}</span>{#if active === item.id}<span class="nav-active-dot"></span>{/if}
-        </button>
-      {/each}
+    <button class="button new-conversation" onclick={onNewConversation}><Icon name="plus" size={18} /> Nueva conversación</button>
+    <nav class="main-nav" aria-label="Secciones">
+      <button class:active={active === 'documents'} aria-current={active === 'documents' ? 'page' : undefined} onclick={() => navigate('documents')}>
+        <Icon name="document" size={19} /><span>Mis documentos</span>{#if active === 'documents'}<span class="nav-active-dot"></span>{/if}
+      </button>
     </nav>
+
+    <div class="nav-section-label">CONVERSACIONES</div>
+    <div class="conversation-list" class:fade-top={fadeTop} class:fade-bottom={fadeBottom} bind:this={listEl} onscroll={() => { closeConversationMenu(); updateListFades(); }}>
+      {#each conversations as conversation (conversation.id)}
+        <div class="conversation-item" class:active={conversation.id === activeConversationId && active === 'chat'}>
+          <button class="conversation-select" onclick={() => selectConversation(conversation.id)} title={conversation.title}>
+            <span class="conversation-title">{conversation.title}</span>
+            <small>{formatDate(conversation.updated_at)}</small>
+          </button>
+          <button class="conversation-menu" aria-label={`Opciones de ${conversation.title}`} aria-haspopup="menu" aria-expanded={menuId === conversation.id} onclick={(event) => toggleConversationMenu(event, conversation)}>
+            <Icon name="more" size={16} />
+          </button>
+        </div>
+      {:else}
+        <p class="conversation-empty">Aún no hay conversaciones. Empieza con una pregunta.</p>
+      {/each}
+    </div>
+    {#if hasMoreConversations}
+      <button class="button ghost compact load-more" disabled={loadingMoreConversations} onclick={onLoadMoreConversations}>
+        {loadingMoreConversations ? 'Cargando…' : 'Cargar más'}
+      </button>
+    {/if}
+
     <div class="sidebar-note"><span class="note-icon"><Icon name="sparkles" size={18} /></span><strong>De la lectura a las ideas.</strong><p>Reúne tus documentos y explora el conocimiento con sus fuentes a mano.</p></div>
-    <div class="sidebar-footer"><span class="avatar">CL</span><div><strong>Mi espacio académico</strong><small>Biblioteca personal · Local</small></div><Icon name="lock" size={15} /></div>
+    <div class="sidebar-footer">
+      <button class="settings-open" onclick={onOpenSettings} aria-label="Abrir configuración de mi espacio">
+        <span class="avatar">CL</span>
+        <div>
+          <strong>Mi espacio académico</strong>
+          <small>{connection === 'checking' ? 'Comprobando conexión…' : connection === 'connected' ? 'SoupDB conectado' : 'Sin conexión'}{model ? ` · ${model}` : ''}</small>
+        </div>
+        <Icon name="settings" size={15} />
+      </button>
+    </div>
   </aside>
   <div class="main-shell">
-    <header class="topbar">
-      <div class="topbar-left"><button bind:this={menuButton} class="icon-button mobile-menu" aria-label={mobileOpen ? 'Cerrar navegación' : 'Abrir navegación'} aria-expanded={mobileOpen} aria-controls="main-navigation" onclick={toggleMenu}><Icon name="menu" /></button><span class="connection-status" class:connected={connection === 'connected'} class:checking={connection === 'checking'} role="status"><span></span>{connection === 'checking' ? 'COMPROBANDO CONEXIÓN' : connection === 'connected' ? 'SERVICIO CONECTADO' : 'SERVICIO SIN CONECTAR'}</span></div>
-      <nav class="top-nav" aria-label="Accesos rápidos"><button class:current={active === 'chat'} onclick={() => navigate('chat')}>Consulta</button><button class:current={active === 'library' || active === 'documents'} onclick={() => navigate('library')}>Recursos</button><button class:current={active === 'collections'} onclick={() => navigate('collections')}>Colecciones</button></nav>
-      <span class="topbar-divider"></span><span class="local-label"><Icon name="lock" size={13} /> Espacio local</span><span class="avatar top-avatar">CL</span>
-    </header>
+    <button bind:this={menuButton} class="icon-button mobile-menu floating-menu" aria-label={mobileOpen ? 'Cerrar navegación' : 'Abrir navegación'} aria-expanded={mobileOpen} aria-controls="main-navigation" onclick={toggleMenu}><Icon name="menu" /></button>
     <main id="main-content" tabindex="-1">{@render children()}</main>
   </div>
 </div>
+
+{#if menuConversation}
+  <div class="conversation-popover floating-popover" style:top={`${menuPosition.top}px`} style:left={`${menuPosition.left}px`}>
+    <button onclick={() => { const conversation = menuConversation; closeConversationMenu(); if (conversation) onRenameConversation(conversation); }}><Icon name="document" size={14} /> Renombrar</button>
+    <button class="danger" onclick={() => { const conversation = menuConversation; closeConversationMenu(); if (conversation) onDeleteConversation(conversation); }}><Icon name="trash" size={14} /> Eliminar</button>
+  </div>
+{/if}

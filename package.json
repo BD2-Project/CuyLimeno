@@ -13,6 +13,9 @@
     "server": "cargo run --manifest-path server/Cargo.toml"
   },
   "dependencies": {
+    "dompurify": "^3.4.18",
+    "marked": "^18.2.1",
+    "pdfjs-dist": "^6.5.438",
     "svelte": "^5.0.0"
   },
   "devDependencies": {
