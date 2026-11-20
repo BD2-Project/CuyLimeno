@@ -1,0 +1,80 @@
+name: cuylimeno-demo
+
+services:
+  # Instala el plugin de texto en un volumen compartido con el motor.
+  plugins:
+    image: python:3.12-slim
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        pip install --no-cache-dir --target /opt/soupdb/plugin-site soupdb-inverted
+        PYTHONPATH=/opt/soupdb/plugin-site python -c "import importlib.metadata as m; print('plugins:', [e.name for e in m.entry_points(group='soupdb.plugins')])"
+    volumes:
+      - plugin-site:/opt/soupdb/plugin-site
+    restart: "no"
+
+  engine:
+    # Última versión publicada del gestor.
+    image: ghcr.io/bd2-project/soupdb:0.8.0
+    environment:
+      SOCKET_TIMEOUT: "300"
+      SOUPDB_PLUGIN_STORAGE: /app/data/plugins
+    volumes:
+      - engine-data:/app/data
+      - plugin-site:/opt/soupdb/plugin-site:ro
+    depends_on:
+      plugins:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; s=socket.create_connection(('127.0.0.1', 55432), 2); s.close()",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  server:
+    image: ghcr.io/bd2-project/cuylimeno-server:latest
+    build:
+      context: ./server
+    environment:
+      CUYLIMENO_SERVER_ADDR: 0.0.0.0:3001
+      SOUPDB_HOST: engine
+      SOUPDB_PORT: "55432"
+      SOUPDB_TIMEOUT_MS: "10000"
+      SOUPDB_POOL_SIZE: "4"
+      SOUPDB_INVERTED_STORAGE_ROOT: /app/data/plugins/inverted
+      CUYLIMENO_DATA_DIR: /app/data/cuylimeno
+      # Se inyectan en runtime desde el entorno/.env del host (nunca en la imagen).
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      GROQ_API_BASE_URL: ${GROQ_API_BASE_URL:-https://api.groq.com/openai/v1}
+    volumes:
+      - cuylimeno-data:/app/data/cuylimeno
+    depends_on:
+      engine:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/bd2-project/cuylimeno-web:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${CUYLIMENO_WEB_PORT:-8080}:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  engine-data:
+  plugin-site:
+  cuylimeno-data:

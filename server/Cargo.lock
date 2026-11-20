@@ -1603,6 +1603,8 @@ dependencies = [
 [[package]]
 name = "soupdb-driver"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a32b0b10bf86df6d962447d45ef1289708f9e52bd78ea024782d1d2cf0a39d2a"
 dependencies = [
  "anyhow",
  "crossterm",
