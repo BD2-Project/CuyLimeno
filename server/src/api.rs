@@ -1,9 +1,13 @@
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
-use rsoup::Connection;
-use serde::Serialize;
-use tokio::time::timeout;
+pub mod chat;
+pub mod collections;
+pub mod conversations;
+pub mod documents;
+pub mod settings;
 
-use crate::config::Config;
+use axum::{extract::State, http::StatusCode, Json};
+use serde::Serialize;
+
+use crate::{db::DbError, error::ApiError, state::SharedState};
 
 #[derive(Serialize)]
 pub struct Health {
@@ -25,116 +29,73 @@ pub struct Capabilities {
     groq_model: Option<String>,
 }
 
-#[derive(Serialize)]
-struct ErrorEnvelope {
-    error: ErrorDetails,
-}
-
-#[derive(Serialize)]
-struct ErrorDetails {
-    code: &'static str,
-    message: &'static str,
-}
-
-pub struct ApiError {
-    status: StatusCode,
-    code: &'static str,
-    message: &'static str,
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> axum::response::Response {
-        (
-            self.status,
-            Json(ErrorEnvelope {
-                error: ErrorDetails {
-                    code: self.code,
-                    message: self.message,
-                },
-            }),
-        )
-            .into_response()
-    }
-}
-
-pub async fn health(State(config): State<Config>) -> Result<Json<Health>, ApiError> {
-    let result = timeout(config.database_timeout, async {
-        let mut connection =
-            Connection::connect(&config.database_host, config.database_port).await?;
-        connection.ping().await
-    })
-    .await;
-
-    match result {
-        Ok(Ok(())) => Ok(Json(Health {
+pub async fn health(State(state): State<SharedState>) -> Result<Json<Health>, ApiError> {
+    match state.db.ping().await {
+        Ok(()) => Ok(Json(Health {
             status: "ok",
             database: "connected",
             driver: "rsoup",
         })),
-        Ok(Err(error)) => {
+        Err(DbError::Timeout) => Err(ApiError::service_unavailable(
+            "DATABASE_TIMEOUT",
+            "SoupDB no respondió dentro del tiempo configurado.",
+        )),
+        Err(error) => {
             eprintln!("SoupDB health check failed: {error}");
-            Err(ApiError {
-                status: StatusCode::SERVICE_UNAVAILABLE,
-                code: "DATABASE_UNAVAILABLE",
-                message: "No se pudo conectar con SoupDB mediante rsoup.",
-            })
+            Err(ApiError::service_unavailable(
+                "DATABASE_UNAVAILABLE",
+                "No se pudo conectar con SoupDB mediante rsoup.",
+            ))
         }
-        Err(_) => Err(ApiError {
-            status: StatusCode::SERVICE_UNAVAILABLE,
-            code: "DATABASE_TIMEOUT",
-            message: "SoupDB no respondió dentro del tiempo configurado.",
-        }),
     }
 }
 
-pub async fn capabilities(State(config): State<Config>) -> Json<Capabilities> {
+pub async fn capabilities(State(state): State<SharedState>) -> Json<Capabilities> {
+    let schema_ready = state.schema_ready();
+    let model = state.active_model();
+    let key_configured = state.config.groq_api_key.is_some();
     Json(Capabilities {
         driver: "rsoup",
         health_check: "rsoup_ping",
-        schema_configured: false,
-        ingestion_available: false,
-        retrieval_available: false,
-        generation_available: false,
+        schema_configured: schema_ready,
+        ingestion_available: schema_ready,
+        retrieval_available: state.index_ready(),
+        generation_available: key_configured && model.is_some() && schema_ready,
         authentication_available: false,
-        groq_configured: config.groq_configured,
-        groq_model: config.groq_model,
+        groq_configured: key_configured && model.is_some(),
+        groq_model: model,
     })
 }
 
-pub async fn schema_not_configured() -> ApiError {
-    ApiError {
-        status: StatusCode::NOT_IMPLEMENTED,
-        code: "DOCUMENT_SCHEMA_NOT_CONFIGURED",
-        message: "El esquema documental y la ingestión todavía no están configurados. No hay fuentes disponibles para generar respuestas.",
-    }
-}
-
 pub async fn not_found() -> ApiError {
-    ApiError {
-        status: StatusCode::NOT_FOUND,
-        code: "NOT_FOUND",
-        message: "El recurso solicitado no existe.",
-    }
+    ApiError::not_found("NOT_FOUND", "El recurso solicitado no existe.")
 }
 
 pub async fn method_not_allowed() -> ApiError {
-    ApiError {
-        status: StatusCode::METHOD_NOT_ALLOWED,
-        code: "METHOD_NOT_ALLOWED",
-        message: "El método solicitado no está permitido.",
-    }
+    ApiError::new(
+        StatusCode::METHOD_NOT_ALLOWED,
+        "METHOD_NOT_ALLOWED",
+        "El método solicitado no está permitido.",
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{
+        sync::{atomic::AtomicBool, Arc, RwLock},
+        time::Duration,
+    };
+
     use axum::body::to_bytes;
+    use axum::response::IntoResponse;
     use rsoup::protocol::{Frame, HEADER_SIZE, OP_PING, OP_PONG};
-    use std::time::Duration;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
     };
+
+    use super::*;
+    use crate::{config::Config, db::Db, state::AppState};
 
     fn config(port: u16) -> Config {
         Config {
@@ -142,9 +103,26 @@ mod tests {
             database_host: "127.0.0.1".to_owned(),
             database_port: port,
             database_timeout: Duration::from_millis(100),
-            groq_configured: false,
+            pool_size: 1,
+            data_dir: std::env::temp_dir(),
+            inverted_storage_root: "/tmp/inverted".to_owned(),
+            groq_api_key: None,
             groq_model: None,
+            groq_base_url: "https://api.groq.com/openai/v1".to_owned(),
+            groq_timeout: Duration::from_secs(5),
+            max_upload_bytes: 1024,
         }
+    }
+
+    fn state(port: u16) -> SharedState {
+        let config = config(port);
+        Arc::new(AppState {
+            db: Db::new(&config),
+            config,
+            schema_ready: AtomicBool::new(false),
+            index_ready: AtomicBool::new(false),
+            active_model: RwLock::new(None),
+        })
     }
 
     #[tokio::test]
@@ -168,7 +146,7 @@ mod tests {
                 .await
                 .unwrap();
         });
-        let response = health(State(config(port))).await;
+        let response = health(State(state(port))).await;
         assert!(matches!(
             response,
             Ok(Json(Health {
@@ -182,7 +160,7 @@ mod tests {
     #[tokio::test]
     async fn health_times_out_when_database_does_not_answer() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let result = health(State(config(listener.local_addr().unwrap().port()))).await;
+        let result = health(State(state(listener.local_addr().unwrap().port()))).await;
         match result {
             Err(error) => {
                 assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
@@ -194,7 +172,10 @@ mod tests {
 
     #[tokio::test]
     async fn missing_schema_returns_explicit_error_instead_of_empty_records() {
-        let response = schema_not_configured().await.into_response();
+        let error = state(55432)
+            .require_schema()
+            .expect_err("el esquema no está configurado");
+        let response = error.into_response();
         assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
         let body = to_bytes(response.into_body(), 4096).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -204,12 +185,50 @@ mod tests {
     #[tokio::test]
     async fn groq_configuration_does_not_imply_available_generation() {
         let mut settings = config(55432);
-        settings.groq_configured = true;
+        settings.groq_api_key = Some("test-key".to_owned());
         settings.groq_model = Some("configured-model".to_owned());
-        let Json(capabilities) = capabilities(State(settings)).await;
+        let shared = Arc::new(AppState {
+            db: Db::new(&settings),
+            active_model: RwLock::new(settings.groq_model.clone()),
+            config: settings,
+            schema_ready: AtomicBool::new(false),
+            index_ready: AtomicBool::new(false),
+        });
+        let Json(capabilities) = capabilities(State(shared)).await;
         assert!(capabilities.groq_configured);
         assert!(!capabilities.schema_configured);
         assert!(!capabilities.generation_available);
     }
-}
 
+    #[tokio::test]
+    async fn schema_ready_implies_ingestion_and_retrieval_but_needs_groq_for_generation() {
+        let settings = config(55432);
+        let shared = Arc::new(AppState {
+            db: Db::new(&settings),
+            config: settings,
+            schema_ready: AtomicBool::new(true),
+            index_ready: AtomicBool::new(true),
+            active_model: RwLock::new(None),
+        });
+        let Json(capabilities) = capabilities(State(shared)).await;
+        assert!(capabilities.schema_configured);
+        assert!(capabilities.ingestion_available);
+        assert!(capabilities.retrieval_available);
+        assert!(!capabilities.generation_available);
+    }
+
+    #[tokio::test]
+    async fn esquema_sin_indice_no_reporta_retrieval() {
+        let settings = config(55432);
+        let shared = Arc::new(AppState {
+            db: Db::new(&settings),
+            config: settings,
+            schema_ready: AtomicBool::new(true),
+            index_ready: AtomicBool::new(false),
+            active_model: RwLock::new(None),
+        });
+        let Json(capabilities) = capabilities(State(shared)).await;
+        assert!(capabilities.schema_configured);
+        assert!(!capabilities.retrieval_available);
+    }
+}

@@ -5,11 +5,18 @@ edition = "2021"
 publish = false
 
 [dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["multipart"] }
 serde = { version = "1", features = ["derive"] }
 soupdb-driver = { path = "../../rsoup" }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync", "fs"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+uuid = { version = "1", features = ["v4"] }
+pdf-extract = "0.12"
+futures-util = "0.3"
+thiserror = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+dotenvy = "0.15"
 
 [dev-dependencies]
 serde_json = "1"
-

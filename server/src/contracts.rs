@@ -1,8 +1,7 @@
-//! Proposed HTTP DTOs, independent of the pending SoupDB document schema.
-//! None of these types imply persisted records or a configured ingestion pipeline.
+//! HTTP DTOs shared with the Svelte frontend.
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
     pub id: String,
     pub title: String,
@@ -15,7 +14,7 @@ pub struct Document {
     pub status: DocumentStatus,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentStatus {
     Pending,
@@ -24,7 +23,18 @@ pub enum DocumentStatus {
     Failed,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+impl DocumentStatus {
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "processing" => DocumentStatus::Processing,
+            "ready" => DocumentStatus::Ready,
+            "failed" => DocumentStatus::Failed,
+            _ => DocumentStatus::Pending,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Collection {
     pub id: String,
     pub name: String,
@@ -36,10 +46,30 @@ pub struct Collection {
 #[derive(Debug, Deserialize)]
 pub struct CollectionInput {
     pub name: String,
+    #[serde(default)]
     pub description: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
+pub struct CollectionUpdate {
+    pub name: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CollectionDocumentsInput {
+    #[serde(default)]
+    pub document_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CollectionDetail {
+    #[serde(flatten)]
+    pub collection: Collection,
+    pub documents: Vec<Document>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Citation {
     pub document_id: String,
     pub document_title: String,
@@ -47,14 +77,23 @@ pub struct Citation {
     pub excerpt: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageRole {
     User,
     Assistant,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+impl MessageRole {
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "assistant" => MessageRole::Assistant,
+            _ => MessageRole::User,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub id: String,
     pub role: MessageRole,
@@ -63,7 +102,7 @@ pub struct Message {
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conversation {
     pub id: String,
     pub title: String,
@@ -74,15 +113,74 @@ pub struct Conversation {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ChatInput {
-    pub conversation_id: Option<String>,
-    pub message: String,
+pub struct ConversationInput {
+    pub title: Option<String>,
+    #[serde(default)]
     pub document_ids: Vec<String>,
+    #[serde(default)]
     pub collection_ids: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ConversationUpdate {
+    pub title: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ChatInput {
+    pub conversation_id: Option<String>,
+    pub message: String,
+    #[serde(default)]
+    pub document_ids: Vec<String>,
+    #[serde(default)]
+    pub collection_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TokenUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+}
+
 #[derive(Debug, Serialize)]
-pub struct ChatResponse {
+pub struct ChatMetaEvent {
     pub conversation_id: String,
-    pub message: Message,
+    pub user_message_id: String,
+    pub assistant_message_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatDeltaEvent {
+    pub content: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatCitationsEvent {
+    pub citations: Vec<Citation>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatDoneEvent {
+    pub message_id: String,
+    pub usage: Option<TokenUsage>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ChatErrorEvent {
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    pub id: String,
+    #[serde(default)]
+    pub context_window: Option<u32>,
+    #[serde(default)]
+    pub owned_by: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ModelUpdate {
+    pub model: String,
 }
