@@ -760,14 +760,17 @@
             <p class="muted">Configura GROQ_API_KEY en el servidor para poder elegir un modelo.</p>
           {:else}
             <label class="field-label" for="model-select">Modelo activo</label>
-            <select id="model-select" class="input full-width" bind:value={selectedModel} disabled={modelsLoading}>
-              {#if modelsLoading}<option value="">Cargando modelos…</option>{/if}
-              {#each availableModels as model (model.id)}<option value={model.id}>{model.id}{model.context_window ? ` · ${model.context_window} tokens` : ''}</option>{/each}
-            </select>
+            <div class="select-wrap">
+              <select id="model-select" class="input model-select" bind:value={selectedModel} disabled={modelsLoading}>
+                {#if modelsLoading}<option value="">Cargando modelos…</option>{/if}
+                {#each availableModels as model (model.id)}<option value={model.id}>{model.id}{model.context_window ? ` · ${model.context_window} tokens` : ''}</option>{/each}
+              </select>
+              <Icon name="chevron-down" size={16} />
+            </div>
             <p class="fine-print">Recomendado: <strong>openai/gpt-oss-20b</strong> (rápido y de bajo consumo). Los modelos grandes responden mejor pero gastan más cuota.</p>
             {#if modelsError}<p class="api-notice" role="alert">{modelsError}</p>{/if}
             <div class="settings-actions">
-              <button class="button ghost compact" disabled={modelsLoading} onclick={() => void loadModels()}>Recargar lista</button>
+              <button class="button outline compact" disabled={modelsLoading} onclick={() => void loadModels()}><Icon name="refresh" size={15} /> Recargar lista</button>
               <button class="button primary" disabled={!selectedModel || modelsLoading || savingModel || selectedModel === capabilities?.groq_model} onclick={saveSelectedModel}>{savingModel ? 'Guardando…' : 'Guardar modelo'}</button>
             </div>
           {/if}

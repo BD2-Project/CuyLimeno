@@ -228,3 +228,33 @@
 .message-content.markdown li{display:list-item;margin:4px 0;padding-left:2px}
 .message-content.markdown li::marker{color:#8a7d99}
 .message-content.markdown li>p{margin:0}
+
+/* Contorno refinado y selector de modelos con la estética de la app. */
+.button.outline{background:#fff;border:1px solid #d6c9e2;color:#6d5c7c;box-shadow:inset 0 1px 0 #ffffffb0}
+.button.outline:hover:not(:disabled){border-color:#b9a6cc;background:#faf6ff;color:#574563}
+.button.outline:disabled{border-color:#e6dfe9;background:#f7f4f9;color:#a294ac;box-shadow:none}
+.select-wrap{position:relative;display:block;margin-top:2px}
+.select-wrap .model-select{width:100%;min-height:44px;appearance:none;-webkit-appearance:none;padding:10px 42px 10px 13px;border:1px solid var(--border);border-radius:10px;background:#fff;color:#5f5468;font-size:12px;line-height:1.4;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.select-wrap .model-select:hover:not(:disabled){border-color:#cbbdd7}
+.select-wrap .model-select:focus-visible{outline:3px solid #a8a0ba;outline-offset:2px;border-color:#b9a6cc}
+.select-wrap .model-select:disabled{background:#f7f4f9;color:#a294ac;cursor:not-allowed}
+.select-wrap>svg{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#8a7d99;pointer-events:none}
+
+/* El HTML de Markdown no debe heredar pre-wrap (añadía líneas vacías entre bloques). */
+.message-content.markdown{white-space:normal}
+.message-content.markdown>:first-child{margin-top:0}
+.message-content.markdown>:last-child{margin-bottom:0}
+.message-content.markdown ul,.message-content.markdown ol{margin:6px 0 8px}
+
+/* El compositor y el panel derecho aprovechan el alto restante con padding mínimo. */
+@media(min-width:1001px){
+  .research-layout{height:calc(100vh - 16px);padding:12px 24px 8px;gap:18px}
+  .composer-wrap{margin-top:10px}
+  .chat-heading{margin-bottom:12px}
+}
+
+/* Una sola fila: compositor y panel llegan al fondo con padding mínimo. */
+@media(min-width:1001px){
+  .research-layout{height:100vh;padding:15px 24px;grid-template-rows:1fr;row-gap:0}
+  .research-chat,.evidence-panel{grid-row:1}
+}
