@@ -4,11 +4,8 @@
   import Icon from './Icon.svelte';
   import type { View, Conversation } from '../api';
 
-  type Connection = 'checking' | 'connected' | 'disconnected';
-
   let {
     active,
-    connection = 'disconnected',
     conversations = [],
     activeConversationId = null,
     hasMoreConversations = false,
@@ -19,17 +16,14 @@
     onRenameConversation,
     onDeleteConversation,
     onLoadMoreConversations,
-    model = null,
     onOpenSettings,
     children,
   }: {
     active: View;
-    connection?: Connection;
     conversations?: Conversation[];
     activeConversationId?: string | null;
     hasMoreConversations?: boolean;
     loadingMoreConversations?: boolean;
-    model?: string | null;
     onNavigate: (view: View) => void;
     onNewConversation: () => void;
     onSelectConversation: (id: string) => void;
@@ -185,7 +179,6 @@
         <span class="avatar">CL</span>
         <div>
           <strong>Mi espacio académico</strong>
-          <small>{connection === 'checking' ? 'Comprobando conexión…' : connection === 'connected' ? 'SoupDB conectado' : 'Sin conexión'}{model ? ` · ${model}` : ''}</small>
         </div>
         <Icon name="settings" size={15} />
       </button>

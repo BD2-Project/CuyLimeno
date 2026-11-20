@@ -364,7 +364,7 @@
     const text = draft.trim();
     if (!text || streaming) return;
     if (!capabilities?.generation_available) {
-      notice = 'Configura GROQ_API_KEY y GROQ_MODEL en el servidor para generar respuestas.';
+      notice = 'La generación no está disponible en este momento.';
       return;
     }
     draft = '';
@@ -530,12 +530,10 @@
 
 <Shell
   active={view}
-  {connection}
   {conversations}
   activeConversationId={conversationId}
   {hasMoreConversations}
   loadingMoreConversations={loadingConversations}
-  model={capabilities?.groq_model ?? null}
   onNavigate={navigate}
   onNewConversation={newConversation}
   onSelectConversation={openConversation}
@@ -600,22 +598,13 @@
           <div class="api-notice" role="alert"><Icon name="warning" size={18} /><div><strong>No se pudo completar la consulta</strong><p>{chatError}</p></div><button class="button ghost compact" onclick={retryLast}>Reintentar</button></div>
         {/if}
         <div class="composer-wrap">
-          <div class="info-banner"><Icon name="info" size={18} /><span>
-            {#if !capabilities?.generation_available}
-              Configura GROQ_API_KEY y GROQ_MODEL en el servidor para generar respuestas.
-            {:else if !documents.length}
-              Puedes preguntar sin fuentes: responderé en general. Añade documentos para obtener respuestas citadas y verificables.
-            {:else}
-              {selectedDocumentIds.length ? `Usaré ${scopeCaption().toLowerCase()}.` : 'Usaré toda la biblioteca.'} Sin coincidencias responderé en general.
-            {/if}
-          </span></div>
           <div class="question-composer">
             <label class="sr-only" for="question">Tu pregunta académica</label>
             <textarea id="question" bind:value={draft} placeholder="¿Qué quieres explorar en tus documentos?" rows="3" maxlength={MAX_MESSAGE_CHARS} title="Enter envía · ⌘/Ctrl+Enter inserta un salto de línea" onkeydown={handleComposerKeydown}></textarea>
             <div class="composer-actions"><span><Icon name="file-text" size={15} /> {documents.length ? `${documents.length} documento${documents.length === 1 ? '' : 's'} en tu biblioteca` : 'Sin fuentes disponibles'}</span><div>
               {#if streaming}<button class="button ghost compact" onclick={stopStreaming}><Icon name="close" size={16} /> Detener</button>{/if}
               <button class="button ghost compact" disabled={!draft.trim()} onclick={copyDraft} aria-label="Copiar borrador"><Icon name="copy" size={16} /></button>
-              <button class="button primary compact" disabled={!draft.trim() || streaming || !capabilities?.generation_available} title={capabilities?.generation_available ? 'Enviar consulta' : 'Configura GroqCloud en el servidor'} onclick={sendMessage}><Icon name="arrow-up" size={17} /> Consultar</button>
+              <button class="button primary compact" disabled={!draft.trim() || streaming || !capabilities?.generation_available} title={capabilities?.generation_available ? 'Enviar consulta' : 'Generación no disponible'} onclick={sendMessage}><Icon name="arrow-up" size={17} /> Consultar</button>
             </div></div>
           </div>
           {#if notice}<p class="notice" role="status">{notice}</p>{/if}
@@ -752,12 +741,12 @@
           <h2>Servicios</h2>
           <dl class="connection-details"><div><dt>Servidor Rust</dt><dd>{capabilities ? 'Disponible' : 'Sin respuesta'}</dd></div><div><dt>SoupDB / rsoup</dt><dd>{connection === 'connected' ? 'Conectado' : connection === 'checking' ? 'Comprobando…' : 'Sin conexión'}</dd></div><div><dt>Esquema documental</dt><dd>{capabilities?.schema_configured ? 'Configurado' : 'Pendiente'}</dd></div><div><dt>Ingestión de PDF</dt><dd>{capabilities?.ingestion_available ? 'Disponible' : 'Pendiente'}</dd></div><div><dt>Índice invertido</dt><dd>{capabilities?.retrieval_available ? 'Operativo' : 'Pendiente'}</dd></div><div><dt>GroqCloud</dt><dd>{capabilities?.groq_configured ? 'Configurado en el servidor' : 'Pendiente de configuración'}</dd></div></dl>
           {#if connectionError}<p class="api-notice" role="status">{connectionError}</p>{/if}
-          <p class="fine-print">La clave de GroqCloud se configura en el servidor y nunca se envía al navegador.</p>
+          <p class="fine-print">La generación utiliza el servicio configurado en el servidor.</p>
         </div>
         <div class="card settings-card">
           <h2>Modelo de generación</h2>
           {#if !capabilities?.groq_configured}
-            <p class="muted">Configura GROQ_API_KEY en el servidor para poder elegir un modelo.</p>
+            <p class="muted">La selección de modelos no está disponible en este momento.</p>
           {:else}
             <label class="field-label" for="model-select">Modelo activo</label>
             <div class="select-wrap">
@@ -793,7 +782,6 @@
         <p class="muted">Tus documentos se incorporarán a tu biblioteca personal.</p>
         {#if capabilities?.ingestion_available}
           <div class="upload-zone">
-            <Icon name="upload" size={35} />
             <h3>Sube un paper en PDF</h3>
             <p>El texto se extrae por páginas y se indexa para citarlo con precisión. Tamaño máximo: 50 MB.</p>
             <label class="button secondary file-label">

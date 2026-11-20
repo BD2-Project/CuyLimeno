@@ -178,14 +178,15 @@ test('el esquema pendiente no se presenta como fallo recuperable', async ({ page
   await expect(page.getByRole('button', { name: 'Reintentar', exact: true })).toHaveCount(0);
 });
 
-test('el indicador lateral refleja la comprobación de conexión', async ({ page }) => {
+test('la configuración refleja la comprobación de conexión', async ({ page }) => {
   let finish: () => void = () => {};
   const pending = new Promise<void>((resolve) => { finish = resolve; });
   await page.route('**/api/health', async (route) => { await pending; await route.fulfill({ json: { database: 'connected' } }); });
-  await page.goto('/#/chat');
-  await expect(page.locator('.settings-open')).toContainText('Comprobando conexión…');
+  await page.goto('/#/settings');
+  const database = page.locator('.connection-details > div').filter({ hasText: 'SoupDB / rsoup' });
+  await expect(database).toContainText('Comprobando…');
   finish();
-  await expect(page.locator('.settings-open')).toContainText('SoupDB conectado');
+  await expect(database).toContainText('Conectado');
 });
 
 test('reflujo a 320 px y menú desplazable en poca altura', async ({ page }) => {

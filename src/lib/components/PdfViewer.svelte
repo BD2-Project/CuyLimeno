@@ -129,7 +129,6 @@
     <div class="api-notice" role="alert">
       <span><strong>No se pudo renderizar el PDF</strong><p>{error}</p></span>
     </div>
-    <a class="button secondary" href={url} target="_blank" rel="noopener">Abrir PDF en una pestaña nueva</a>
   {:else}
     <div class="pdf-scroll" bind:this={containerEl}>
       {#if loading}<p class="document-meta">Cargando PDF…</p>{/if}
