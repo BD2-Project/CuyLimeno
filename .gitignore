@@ -9,4 +9,5 @@ playwright-report/
 test-results/
 .local/
 *.[mM][dD]
+!README.md
 [dD][oO][cC][sS]/
