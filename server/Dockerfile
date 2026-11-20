@@ -7,10 +7,7 @@ RUN mkdir src && printf 'fn main() {}\n' > src/main.rs \
 COPY src ./src
 RUN touch src/main.rs && cargo build --release --locked
 
-FROM debian:bookworm-slim
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.12-slim-bookworm
 WORKDIR /app
 COPY --from=build /build/target/release/cuy-limeno-server /usr/local/bin/cuy-limeno-server
 ENV CUYLIMENO_SERVER_ADDR=0.0.0.0:3001 \
@@ -23,5 +20,5 @@ ENV CUYLIMENO_SERVER_ADDR=0.0.0.0:3001 \
 RUN mkdir -p /app/data/cuylimeno
 EXPOSE 3001
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=6 \
-    CMD curl -fsS http://127.0.0.1:3001/api/health || exit 1
+    CMD ["python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:3001/api/health', timeout=2).close()"]
 CMD ["cuy-limeno-server"]

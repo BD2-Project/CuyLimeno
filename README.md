@@ -47,6 +47,80 @@ aparece la cita.
 
 ## Demo rápida con Docker
 
+### Ensayo y demo en vivo (Windows PowerShell)
+
+| Repositorio | Papel en la demo |
+|---|---|
+| **CuyLimeno** | App web y API Rust. Recibe el PDF, extrae texto por página, crea fragmentos, consulta el motor y arma el contexto para GroqCloud. Presenta la respuesta y enlaza las citas con el PDF. |
+| **SoupDB** | Motor que almacena los metadatos y fragmentos y recupera texto con el plugin `soupdb-inverted` y BM25. Compose usa la imagen publicada `0.8.0`. |
+| **rsoup** | Driver TCP que usa el backend de CuyLimeno. Cargo lo incorpora como `soupdb-driver` 0.3.0 al compilar el servidor. |
+| **SoupChef** | Cliente SQL opcional para mostrar las tablas e índices del mismo motor. Su versión web habla TCP desde el servidor Node. Su versión de escritorio usa rsoup con Tauri. |
+
+El flujo es navegador → CuyLimeno → rsoup → SoupDB para recuperar fragmentos. CuyLimeno envía los fragmentos relevantes y la pregunta a GroqCloud para generar la respuesta. Los PDFs originales se guardan en el volumen de CuyLimeno. La recuperación documental usa texto y el índice invertido.
+
+1. **Prepara el equipo antes de presentar.** Abre Docker Desktop con contenedores Linux. La primera compilación descarga imágenes y dependencias. GroqCloud requiere internet también durante la demo. Prepara un PDF con texto seleccionable y una pregunta cuya respuesta puedas ubicar en una página concreta. El límite predeterminado es de 50 MiB por PDF.
+
+   ```powershell
+   Set-Location 'C:\Users\yeimi\Downloads\BD2\Proyecto\CuyLimeno'
+   docker version
+   docker compose version
+   if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+   notepad .env
+   ```
+
+   Completa `GROQ_API_KEY` en el archivo y guárdalo. Puedes conservar el valor de `GROQ_MODEL` de la plantilla. Usa un PDF de prueba que puedas compartir con GroqCloud.
+
+2. **Construye y arranca.** Elige uno de los dos comandos. Para el segundo, `SoupChef` debe estar junto a `CuyLimeno` en la carpeta padre.
+
+   ```powershell
+   # Solo el RAG documental
+   docker compose up -d --build --wait --wait-timeout 180
+
+   # RAG más el inspector SQL opcional
+   docker compose --profile inspeccion up -d --build --wait --wait-timeout 180
+   ```
+
+   Abre CuyLimeño en <http://localhost:8080>. Con el perfil activo, abre también SoupChef en <http://localhost:3000>. PostGIS pertenece a los experimentos de SoupDB. La demo usa un solo motor y un solo Compose.
+
+3. **Comprueba el estado antes de subir el PDF.**
+
+   ```powershell
+   docker compose --profile inspeccion ps -a
+   Invoke-RestMethod http://localhost:8080/api/health
+   Invoke-RestMethod http://localhost:8080/api/capabilities
+   ```
+
+   `plugins` termina con código 0 tras instalar el índice. `engine` y `server` deben estar saludables y `web` en ejecución. En la API espera `database: connected`, `driver: rsoup` y `schema_configured`, `ingestion_available`, `retrieval_available` y `generation_available` en `true`. Este último indica que el servidor tiene configuración de generación. Envía una consulta de ensayo para confirmar que Groq acepta la clave y el modelo.
+
+4. **Muestra la carga y una respuesta con cita.** En **Mis documentos → Añadir documentos → Seleccionar PDF**, carga el archivo y espera el estado **Listo**. Puedes usar `tests/fixtures/sample.pdf`, de tres páginas. En el chat abre **Fuentes**, selecciona ese PDF y pregunta «¿En qué página aparece el fragmento sobre el motor multimodal y qué dice?». El texto está en la página 3. Pulsa la cita en **Evidencias y citas** para mostrar el extracto y la página en el visor. Con otro PDF, usa una pregunta que incluya términos del documento para facilitar la recuperación BM25.
+
+5. **Muestra el motor si activaste SoupChef.** Ejecuta la siguiente consulta para mostrar la tabla generada durante la ingesta. `page` vincula el fragmento con la página del PDF.
+
+   ```sql
+   SELECT document_id, page, pos, texto FROM cuy_chunks LIMIT 10;
+   ```
+
+   Para mostrar la recuperación léxica con el PDF de prueba, ejecuta la variante que usa el mismo índice que CuyLimeño.
+
+   ```sql
+   SELECT page, texto, SCORE()
+   FROM cuy_chunks
+   WHERE SEARCH(texto, 'motor multimodal') USING INVERTED
+     WITH (k = 5, method = 'bm25')
+   LIMIT 5;
+   ```
+
+6. **Reutiliza el ensayo el día de la demo.** Desde la misma carpeta ejecuta `docker compose up -d --wait --wait-timeout 180` con las imágenes ya construidas. Agrega `--profile inspeccion` antes de `up` si vas a mostrar SoupChef. Repite las comprobaciones del paso 3. Para detener la demo conservando los PDFs, los índices y las conversaciones, ejecuta `docker compose --profile inspeccion down`.
+
+| Si ocurre esto | Cómo revisarlo |
+|---|---|
+| Puerto ocupado | Cambia `CUYLIMENO_WEB_PORT` o `SOUPCHEF_WEB_PORT` en `.env` y vuelve a ejecutar `up`. Usa el puerto nuevo en el navegador y en los chequeos HTTP. |
+| Motor o índice pendiente | Ejecuta `docker compose logs --tail 100 plugins engine server` y revisa el estado antes de intentar cargar el archivo. |
+| **Error** al procesar un PDF | Abre el PDF e intenta seleccionar texto. Para el ensayo usa el PDF de prueba o un documento con capa de texto. |
+| Groq sin configurar o responde con error | Comprueba la clave, el modelo y la conexión a internet. Tras editar `.env`, ejecuta `docker compose up -d --wait` con el mismo perfil que usaste en el arranque. Si Groq sigue indisponible, muestra el PDF en **Mis documentos** y, con SoupChef, la consulta BM25 del paso 5. |
+
+### Inicio rápido
+
 Requisitos: Docker con Compose v2. La primera vez necesita internet (descarga de imágenes e
 instalación del plugin de texto).
 

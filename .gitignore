@@ -11,3 +11,9 @@ test-results/
 *.[mM][dD]
 !README.md
 [dD][oO][cC][sS]/
+
+# Experimentos locales con pnpm y artefactos generados por Stitch
+pnpm-lock.yaml
+pnpm-workspace.yaml
+stitch_nexo_acad_mico_ai/
+stitch_nexo_acad_mico_ai.zip

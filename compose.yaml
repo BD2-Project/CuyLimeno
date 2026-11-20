@@ -4,7 +4,7 @@ services:
   # Instala el plugin de texto en un volumen compartido con el motor.
   plugins:
     image: python:3.12-slim
-    entrypoint: ["sh", "-c"]
+    entrypoint: ["sh", "-ec"]
     command:
       - |
         pip install --no-cache-dir --target /opt/soupdb/plugin-site soupdb-inverted
@@ -73,6 +73,19 @@ services:
       server:
         condition: service_healthy
     restart: unless-stopped
+
+  soupchef:
+    profiles: [inspeccion]
+    build:
+      context: ../SoupChef
+    environment:
+      SOUPDB_HOST: engine
+      SOUPDB_PORT: "55432"
+    ports:
+      - "127.0.0.1:${SOUPCHEF_WEB_PORT:-3000}:3000"
+    depends_on:
+      engine:
+        condition: service_healthy
 
 volumes:
   engine-data:
